@@ -1,0 +1,175 @@
+A note about PIDL generated files
+=================================
+
+Quick guide
+===========
+
+    for file in *.idl */*.idl; do
+        echo "Generating dissector for $file"
+        ../../../tools/pidl/pidl --includedir . --ws-parser -- $file;
+    done
+    cp packet-dcerpc*.* ..
+
+Complete infos
+==============
+
+The following files:
+../packet-dcerpc-atsvc.h
+../packet-dcerpc-budb.c
+../packet-dcerpc-budb.h
+../packet-dcerpc-butc.c
+../packet-dcerpc-butc.h
+../packet-dcerpc-dfs.h
+../packet-dcerpc-dnsserver.h
+../packet-dcerpc-drsuapi.c
+../packet-dcerpc-drsuapi.h
+../packet-dcerpc-dssetup.h
+../packet-dcerpc-efs.h
+../packet-dcerpc-eventlog.h
+../packet-dcerpc-frsrpc.h
+../packet-dcerpc-frstrans.h
+../packet-dcerpc-initshutdown.h
+../packet-dcerpc-lsa.h
+../packet-dcerpc-mapi.h
+../packet-dcerpc-misc.h
+../packet-dcerpc-nspi.h
+../packet-dcerpc-rfr.h
+../packet-dcerpc-samr.h
+../packet-dcerpc-srvsvc.h
+../packet-dcerpc-winreg.h
+../packet-dcerpc-wkssvc.h
+../packet-dcerpc-wzcsvc.h
+
+are automatically generated via a tool called "pidl"; you shouldn't
+modify them manually.
+
+The pidl tool is maintained by the Samba project (http://samba.org,
+samba-technical@samba.org).  We have a version in ../../../tools/pidl;
+it currently differs from the Samba version only in its Wireshark-parser
+generator, as we had to change it to reflect some API differences
+between the current Wireshark release and the development trunk.
+
+The Samba version can be fetched from their git tree:
+    git clone git://git.samba.org/samba.git
+
+Running pidl
+============
+
+You have to run the pidl command inside the pidl folder of the wireshark
+source tree.
+
+The command to compile file:
+    ../../../tools/pidl/pidl --includedir . --ws-parser -- <idl-file>
+                                                        ^^^
+                                                        This is *VERY* important
+The command generate 2 files:
+    packet-dcerpc-<interfacename>.h
+    packet-dcerpc-<interfacename>.c
+
+For instance, with the atsvc.idl, the command will be:
+
+        ../../../tools/pidl/pidl --includedir . --ws-parser -- atsvc.idl
+
+This will generate 2 files:
+    packet-dcerpc-atsvc.h
+    packet-dcerpc-atsvc.c
+
+If you run outside the dissectors/pidl directory, this *will* result in a
+warning such as:
+
+    atsvc.idl:5:23: idl_types.h: No such file or directory
+
+and *may* result in additional warnings such as:
+
+    Warning: No conformance file `initshutdown.cnf'
+    Unable to handle string with flags STR_LEN4|STR_NOTERM at /usr/lib/perl5/site_perl/5.8.6/Parse/Pidl/Wireshark/NDR.pm line 283.
+
+Notes about the in-tree pidl
+============================
+
+To allow building Wireshark pidl dissectors without having to
+*explicitly* access a remote git repository, and to allow us to make
+changes to the Wireshark parser generator that the Samba developers
+might not want to make until a new major release of Wireshark comes out,
+so as to allow users to build dissectors to run in the current Wireshark
+release, a copy of pidl is located in tools/pidl.
+
+Not compiling idl
+=================
+As of November 23, 2013, the following idl have issues when generating
+and compiling:
+
+pidl generates declarations of functions that take a dcerpc_info *
+argument and definitions of those functions that don't:
+
+	eventlog.idl
+
+pidl generates declarations and definitions of functions that take a
+dcerpc_info * argument, but calls to those functions that don't:
+
+	frsrpc.idl
+
+pidl generates code that refers to a type just named "g", perhaps
+because the NDR type is an empty string (not set?) and it's prepending
+"g" to the NDR type:
+
+	dfs.idl
+
+pidl generates code that, after declaring a guint1632 variable, has, on
+the next line, a declaration that has a blank, a letter, and a
+semicolon.  It can't handle, for example:
+
+	typedef enum {
+		FRSTRANS_RDC_FILTER_GENERIC	= 0x0000,
+		FRSTRANS_RDC_FILTER_MAX		= 0x0001,
+		FRSTRANS_RDC_FILTER_POINT	= 0x0002,
+		FRSTRANS_RDC_MAX_ALGORITHM	= 0x0003
+	} frstrans_RdcChunckerAlgorithm;
+
+		...
+
+	typedef [switch_type(frstrans_RdcChunckerAlgorithm)] union {
+		[case(FRSTRANS_RDC_FILTER_GENERIC)]
+			frstrans_RdcParameterGeneric filter_generic;
+		[case(FRSTRANS_RDC_FILTER_MAX)]
+			frstrans_RdcParameterFilterMax filter_max;
+		[case(FRSTRANS_RDC_FILTER_POINT)]
+			frstrans_RdcParameterFilterPoint filter_point;
+	} frstrans_RdcParameterUnion;
+
+	typedef struct {
+		frstrans_RdcChunckerAlgorithm rdc_chunker_algorithm;
+		[switch_is(rdc_chunker_algorithm)] frstrans_RdcParameterUnion u;
+	} frstrans_RdcParameters;
+
+but there's no reason for it to bother to generate a C variable
+corresponding to that union in the first place - it'd be unused.
+
+Samba bug 10291:
+
+	https://bugzilla.samba.org/show_bug.cgi?id=10291
+
+has been filed on this.
+
+	dfs.idl
+	frstrans.idl
+
+pidl generates code that passes "*0" rather than "0" as the last
+argument in calls:
+
+	dfs.idl
+	dnsserver.idl
+	dssetup.idl
+	lsa.idl
+	samr.idl
+
+pidl generates possibly-incorrect code for these - this needs checking:
+
+	rfr/rfr.idl
+
+pidl rejects these with errors:
+
+	srvsvc.idl
+	wkssvc.cnf
+	mapi/mapi.idl
+	nspi/nspi.idl
